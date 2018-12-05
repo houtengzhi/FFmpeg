@@ -116,6 +116,8 @@ fail:
 }
 
 DnsCacheEntry *get_dns_cache_reference(char *hostname) {
+	av_log(NULL, AV_LOG_DEBUG, "[dns_cache.c] get_dns_cache_reference: hostname = %s\n", hostname);
+
     AVDictionaryEntry *elem = NULL;
     DnsCacheEntry *dns_cache_entry = NULL;
     int64_t cur_time = av_gettime_relative();
@@ -151,6 +153,8 @@ DnsCacheEntry *get_dns_cache_reference(char *hostname) {
 }
 
 int release_dns_cache_reference(char *hostname, DnsCacheEntry **p_entry) {
+	av_log(NULL, AV_LOG_DEBUG, "[dns_cache.c] release_dns_cache_reference: hostname = %s\n", hostname);
+
     DnsCacheEntry *entry = *p_entry;
 
     if (!hostname || strlen(hostname) == 0) {
@@ -170,6 +174,8 @@ int release_dns_cache_reference(char *hostname, DnsCacheEntry **p_entry) {
 }
 
 int remove_dns_cache_entry(char *hostname) {
+	av_log(NULL, AV_LOG_DEBUG, "[dns_cache.c] remove_dns_cache_entry: hostname = %s\n", hostname);
+
     AVDictionaryEntry *elem = NULL;
     DnsCacheEntry *dns_cache_entry = NULL;
 
@@ -193,7 +199,9 @@ int remove_dns_cache_entry(char *hostname) {
 }
 
 int add_dns_cache_entry(char *hostname, struct addrinfo *cur_ai, int64_t timeout) {
-    DnsCacheEntry *new_entry = NULL;
+	av_log(NULL, AV_LOG_DEBUG, "[dns_cache.c] add_dns_cache_entry: hostname = %s, timeout = %lld\n", hostname, timeout);
+
+	DnsCacheEntry *new_entry = NULL;
     DnsCacheEntry *old_entry = NULL;
     AVDictionaryEntry *elem  = NULL;
 

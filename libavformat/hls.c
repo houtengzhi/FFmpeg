@@ -119,6 +119,9 @@ struct playlist {
     int64_t cur_seg_offset;
     int64_t last_load_time;
 
+	/*是否是时移流，时移流与直播流相同，finished为0，但是有duration，可以seek*/
+	int timeshifted;
+
     /* Currently active Media Initialization Section */
     struct segment *cur_init_section;
     uint8_t *init_sec_buf;
@@ -725,6 +728,7 @@ static int parse_playlist(HLSContext *c, const char *url,
     if (pls) {
         free_segment_list(pls);
         pls->finished = 0;
+		pls->timeshifted = 0;
         pls->type = PLS_TYPE_UNSPECIFIED;
     }
     while (!avio_feof(in)) {
@@ -787,6 +791,11 @@ static int parse_playlist(HLSContext *c, const char *url,
         } else if (av_strstart(line, "#EXT-X-ENDLIST", &ptr)) {
             if (pls)
                 pls->finished = 1;
+        } else if (av_strstart(line, "#EXT-X-ANGUANG", &ptr)) {
+        /*custom for anguang time shift stream*/
+        	if (pls)
+				pls->timeshifted = 1;
+        	
         } else if (av_strstart(line, "#EXT-X-DISCONTINUITY", &ptr)) {
             previous_duration = previous_duration1;
         } else if (av_strstart(line, "#EXTINF:", &ptr)) {
@@ -1648,6 +1657,7 @@ static int hls_close(AVFormatContext *s)
 
 static int hls_read_header(AVFormatContext *s, AVDictionary **options)
 {
+	av_log(NULL, AV_LOG_TRACE, "[hls.c] hls_read_header");
     void *u = (s->flags & AVFMT_FLAG_CUSTOM_IO) ? NULL : s->pb;
     HLSContext *c = s->priv_data;
     int ret = 0, i;
@@ -1710,7 +1720,7 @@ static int hls_read_header(AVFormatContext *s, AVDictionary **options)
 
     /* If this isn't a live stream, calculate the total duration of the
      * stream. */
-    if (c->variants[0]->playlists[0]->finished) {
+    if (c->variants[0]->playlists[0]->finished || c->variants[0]->playlists[0]->timeshifted) {
         int64_t duration = 0;
         for (i = 0; i < c->variants[0]->playlists[0]->n_segments; i++)
             duration += c->variants[0]->playlists[0]->segments[i]->duration;
@@ -2101,6 +2111,8 @@ static int hls_read_packet(AVFormatContext *s, AVPacket *pkt)
 static int hls_read_seek(AVFormatContext *s, int stream_index,
                                int64_t timestamp, int flags)
 {
+	av_log(NULL, AV_LOG_DEBUG, "[hls.c] hls_read_seek, stream index: %d, flags: %d", 
+		stream_index, flags);
     HLSContext *c = s->priv_data;
     struct playlist *seek_pls = NULL;
     int i, seq_no;
@@ -2109,7 +2121,7 @@ static int hls_read_seek(AVFormatContext *s, int stream_index,
     int64_t first_timestamp, seek_timestamp, duration;
 
     if ((flags & AVSEEK_FLAG_BYTE) ||
-        !(c->variants[0]->playlists[0]->finished || c->variants[0]->playlists[0]->type == PLS_TYPE_EVENT))
+        !(c->variants[0]->playlists[0]->finished || c->variants[0]->playlists[0]->timeshifted || c->variants[0]->playlists[0]->type == PLS_TYPE_EVENT))
         return AVERROR(ENOSYS);
 
     first_timestamp = c->first_timestamp == AV_NOPTS_VALUE ?

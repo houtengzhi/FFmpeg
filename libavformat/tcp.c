@@ -340,6 +340,7 @@ int ijk_tcp_getaddrinfo_nonblock(const char *hostname, const char *servname,
 /* return non zero if error */
 static int tcp_open(URLContext *h, const char *uri, int flags)
 {
+	av_log(NULL, AV_LOG_DEBUG, "[tcp.c] tcp_open uri: %s, flags: %d", uri, flags);
     struct addrinfo hints = { 0 }, *ai, *cur_ai;
     int port, fd = -1;
     TCPContext *s = h->priv_data;
@@ -347,7 +348,7 @@ static int tcp_open(URLContext *h, const char *uri, int flags)
     char buf[256];
     int ret;
     char hostname[1024],proto[1024],path[1024];
-    char portstr[10];
+    char portstr[10], hoststr[1024];
     char hostname_bak[1024] = {0};
     AVAppTcpIOControl control = {0};
     DnsCacheEntry *dns_entry = NULL;
@@ -366,7 +367,11 @@ static int tcp_open(URLContext *h, const char *uri, int flags)
 
     av_url_split(proto, sizeof(proto), NULL, 0, hostname, sizeof(hostname),
         &port, path, sizeof(path), uri);
-    if (strcmp(proto, "tcp"))
+	ff_url_join(hoststr, sizeof(hoststr), NULL, NULL, hostname, port, NULL);
+	av_log(NULL, AV_LOG_DEBUG, "[tcp.c] tcp_open proto: %s, hostname: %s, port: %d, \n hoststr: %s", 
+		proto, hostname, port, hoststr);
+
+	if (strcmp(proto, "tcp"))
         return AVERROR(EINVAL);
     if (port <= 0 || port >= 65536) {
         av_log(h, AV_LOG_ERROR, "Port missing in uri\n");
@@ -401,14 +406,21 @@ static int tcp_open(URLContext *h, const char *uri, int flags)
     if (s->listen)
         hints.ai_flags |= AI_PASSIVE;
 
+	av_log(NULL, AV_LOG_DEBUG, "[tcp.c] dns_cache_timeout: %lld", s->dns_cache_timeout);
+	av_log(NULL, AV_LOG_DEBUG, "[tcp.c] dns_cache_timeout: %lld", (long long int )s->dns_cache_timeout);
+
     if (s->dns_cache_timeout > 0) {
-        memcpy(hostname_bak, hostname, 1024);
+        memcpy(hostname_bak, hoststr, 1024);
+		av_log(NULL, AV_LOG_DEBUG, "[tcp.c] dns_cache_clear: %lld", (long long int )s->dns_cache_clear);
+		av_log(NULL, AV_LOG_DEBUG, "[tcp.c] dns_cache_clear: %d", s->dns_cache_clear);
         if (s->dns_cache_clear) {
-            av_log(NULL, AV_LOG_INFO, "will delete cache entry, hostname = %s\n", hostname);
-            remove_dns_cache_entry(hostname);
+            av_log(NULL, AV_LOG_INFO, "[tcp.c] will delete cache entry, hoststr = %s\n", hostname_bak);
+            remove_dns_cache_entry(hostname_bak);
         } else {
-            dns_entry = get_dns_cache_reference(hostname);
+            dns_entry = get_dns_cache_reference(hostname_bak);
         }
+    } else {
+    	av_log(NULL, AV_LOG_DEBUG, "[tcp.c] dns_cache_timeout <= 0");
     }
 
     if (!dns_entry) {
@@ -432,7 +444,10 @@ static int tcp_open(URLContext *h, const char *uri, int flags)
 
         cur_ai = ai;
     } else {
-        av_log(NULL, AV_LOG_INFO, "Hit DNS cache hostname = %s\n", hostname);
+        av_log(NULL, AV_LOG_INFO, "[tcp.c] Hit DNS cache hoststr = %s\n", hostname_bak);
+
+		//struct addrinfo * tmp_ai = dns_entry->res;
+		//av_log(NULL, AV_LOG_INFO, "", ((struct sockaddr_in *)tmp_ai->ai_addr)->sin_port);
         cur_ai = dns_entry->res;
     }
 
@@ -495,9 +510,9 @@ static int tcp_open(URLContext *h, const char *uri, int flags)
             if (ret) {
                 av_log(NULL, AV_LOG_WARNING, "terminated by application in AVAPP_CTRL_DID_TCP_OPEN");
                 goto fail1;
-            } else if (!dns_entry && strcmp(control.ip, hostname_bak)) {
+            } else if (!dns_entry && strcmp(control.ip, hostname)) {
                 add_dns_cache_entry(hostname_bak, cur_ai, s->dns_cache_timeout);
-                av_log(NULL, AV_LOG_INFO, "Add dns cache hostname = %s, ip = %s\n", hostname_bak , control.ip);
+                av_log(NULL, AV_LOG_INFO, "[tcp.c] Add dns cache hoststr = %s, ip = %s\n", hostname_bak , control.ip);
             }
         }
     }
@@ -526,7 +541,7 @@ static int tcp_open(URLContext *h, const char *uri, int flags)
         closesocket(fd);
 
     if (dns_entry) {
-        av_log(NULL, AV_LOG_ERROR, "Hit dns cache but connect fail hostname = %s, ip = %s\n", hostname , control.ip);
+        av_log(NULL, AV_LOG_ERROR, "[tcp.c] Hit dns cache but connect fail hostname = %s, ip = %s\n", hostname , control.ip);
         release_dns_cache_reference(hostname_bak, &dns_entry);
         remove_dns_cache_entry(hostname_bak);
     } else {
@@ -539,6 +554,8 @@ static int tcp_open(URLContext *h, const char *uri, int flags)
 /* return non zero if error */
 static int tcp_fast_open(URLContext *h, const char *http_request, const char *uri, int flags)
 {
+	av_log(h, AV_LOG_DEBUG, "tcp_fast_open uri: %s, flags: %d", uri, flags);
+
     struct addrinfo hints = { 0 }, *ai, *cur_ai;
     int port, fd = -1;
     TCPContext *s = h->priv_data;
@@ -552,6 +569,7 @@ static int tcp_fast_open(URLContext *h, const char *http_request, const char *ur
     DnsCacheEntry *dns_entry = NULL;
     av_url_split(proto, sizeof(proto), NULL, 0, hostname, sizeof(hostname),
         &port, path, sizeof(path), uri);
+	av_log(h, AV_LOG_DEBUG, "tcp_fast_open proto: %s, hostname: %s, port: %d", proto, hostname, port);
     if (strcmp(proto, "tcp"))
         return AVERROR(EINVAL);
     if (port <= 0 || port >= 65536) {

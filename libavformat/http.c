@@ -189,6 +189,8 @@ void ff_http_init_auth_state(URLContext *dest, const URLContext *src)
 
 static int http_open_cnx_internal(URLContext *h, AVDictionary **options)
 {
+	av_log(h, AV_LOG_VERBOSE, "http_open_cnx_internal");
+
     const char *path, *proxy_path, *lower_proto = "tcp", *local_path;
     char hostname[1024], hoststr[1024], proto[10];
     char auth[1024], proxyauth[1024] = "";
@@ -234,7 +236,9 @@ static int http_open_cnx_internal(URLContext *h, AVDictionary **options)
                      hostname, sizeof(hostname), &port, NULL, 0, proxy_path);
     }
 
+	av_log(h, AV_LOG_DEBUG, "http_open_cnx_internal hostname: %s, port: %d", hostname, port);
     ff_url_join(buf, sizeof(buf), lower_proto, NULL, hostname, port, NULL);
+	av_log(h, AV_LOG_DEBUG, "http_open_cnx_internal buf: %s", buf);
 
     if (!s->hd) {
         av_dict_set_int(options, "ijkapplication", (int64_t)(intptr_t)s->app_ctx, 0);
@@ -251,16 +255,22 @@ static int http_open_cnx_internal(URLContext *h, AVDictionary **options)
     if (err < 0)
         return err;
 
+	av_log(h, AV_LOG_VERBOSE, "http_open_cnx_internal return location_changed: %d", location_changed);
+
     return location_changed;
 }
 
 /* return non zero if error */
 static int http_open_cnx(URLContext *h, AVDictionary **options)
 {
+	av_log(h, AV_LOG_VERBOSE, "http_open_cnx");
+
     HTTPAuthType cur_auth_type, cur_proxy_auth_type;
     HTTPContext *s = h->priv_data;
     int location_changed, attempts = 0, redirects = 0;
 redo:
+	
+	av_log(h, AV_LOG_VERBOSE, "http_open_cnx_internal redo");
     av_dict_copy(options, s->chained_options, 0);
 
     cur_auth_type       = s->auth_state.auth_type;
@@ -269,6 +279,8 @@ redo:
     location_changed = http_open_cnx_internal(h, options);
     if (location_changed < 0)
         goto fail;
+
+	av_log(h, AV_LOG_VERBOSE, "http_open_cnx_internal http code: %d", s->http_code);
 
     attempts++;
     if (s->http_code == 401) {
@@ -304,6 +316,7 @@ redo:
     return 0;
 
 fail:
+	av_log(h, AV_LOG_ERROR, "http_open_cnx_internal fail");
     if (s->hd)
         ffurl_closep(&s->hd);
     if (location_changed < 0)
@@ -583,8 +596,9 @@ static int http_get_line(HTTPContext *s, char *line, int line_size)
     q = line;
     for (;;) {
         ch = http_getc(s);
-        if (ch < 0)
+        if (ch < 0){
             return ch;
+        }
         if (ch == '\n') {
             /* process line */
             if (q > line && q[-1] == '\r')
@@ -1084,6 +1098,7 @@ static inline int has_header(const char *str, const char *header)
 
 static int http_read_header(URLContext *h, int *new_location)
 {
+	av_log(h, AV_LOG_DEBUG, "http_read_header");
     HTTPContext *s = h->priv_data;
     char line[MAX_URL_SIZE];
     int err = 0;
@@ -1111,6 +1126,8 @@ static int http_read_header(URLContext *h, int *new_location)
     cookie_string(s->cookie_dict, &s->cookies);
     av_dict_free(&s->cookie_dict);
 
+	av_log(h, AV_LOG_DEBUG, "http_read_header return %d", err);
+
     return err;
 }
 
@@ -1118,6 +1135,9 @@ static int http_connect(URLContext *h, const char *path, const char *local_path,
                         const char *hoststr, const char *auth,
                         const char *proxyauth, int *new_location)
 {
+	av_log(h, AV_LOG_DEBUG, "http_connect");
+	av_log(h, AV_LOG_DEBUG, "path: %s,\n local_path: %s,\n hoststr: %s,\n auth: %s,\n ", 
+		path, local_path, hoststr, auth);
     HTTPContext *s = h->priv_data;
     int post, err;
     char headers[HTTP_HEADERS_SIZE] = "";
@@ -1248,12 +1268,19 @@ static int http_connect(URLContext *h, const char *path, const char *local_path,
     }
 
 
-    if ((err = ffurl_write(s->hd, s->buffer, strlen(s->buffer))) < 0)
-        goto done;
+	av_log(h, AV_LOG_DEBUG, "ffurl_write");
 
-    if (s->post_data)
-        if ((err = ffurl_write(s->hd, s->post_data, s->post_datalen)) < 0)
+    if ((err = ffurl_write(s->hd, s->buffer, strlen(s->buffer))) < 0) {
+		av_log(h, AV_LOG_ERROR, "ffurl_write buffer error: %d", err);
+        goto done;
+    }
+
+    if (s->post_data){
+        if ((err = ffurl_write(s->hd, s->post_data, s->post_datalen)) < 0){
+			av_log(h, AV_LOG_ERROR, "ffurl_write post data error: %d", err);
             goto done;
+        }
+    }
 
     /* init input buffer */
     s->buf_ptr          = s->buffer;
@@ -1279,8 +1306,10 @@ static int http_connect(URLContext *h, const char *path, const char *local_path,
 
     /* wait for header */
     err = http_read_header(h, new_location);
-    if (err < 0)
+    if (err < 0) {
+		av_log(h, AV_LOG_ERROR, "http_read_header error: %d", err);
         goto done;
+    }
 
     if (*new_location)
         s->off = off;
@@ -1295,6 +1324,7 @@ static int http_connect(URLContext *h, const char *path, const char *local_path,
     }
 
     err = (off == s->off) ? 0 : -1;
+	av_log(h, AV_LOG_DEBUG, "http_connect return: %d", err);
 done:
     av_freep(&authstr);
     av_freep(&proxyauthstr);
